@@ -3,16 +3,20 @@ package com.example.proxy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.example.proxy.config.ProxyConfig;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class ProxyApplicationTest {
     Path temporaryDirectory;
+    private final AtomicReference<ProxyConfig> startedConfig = new AtomicReference<>();
 
     @BeforeEach
     void createWorkspaceLocalTemporaryDirectory() throws Exception {
@@ -53,6 +57,7 @@ class ProxyApplicationTest {
         assertTrue(result.stdout().contains(configFile.toAbsolutePath().toString()));
         assertTrue(result.stdout().contains("1 个后端"));
         assertTrue(result.stdout().contains("策略 round-robin"));
+        assertEquals("主节点", startedConfig.get().backends().get(0).id());
         assertEquals("", result.stderr());
     }
 
@@ -78,13 +83,29 @@ class ProxyApplicationTest {
         assertTrue(result.stderr().contains("--help"));
     }
 
+    @Test
+    void reportsBindFailuresInsteadOfClaimingStartupSuccess() throws Exception {
+        Path config = temporaryDirectory.resolve("bind-failure.properties");
+        Files.writeString(config, "backends=a\nbackend.a.url=http://127.0.0.1:9001\n");
+        ByteArrayOutputStream errors = new ByteArrayOutputStream();
+        try (PrintStream out = new PrintStream(new ByteArrayOutputStream());
+                PrintStream err = new PrintStream(errors, true, StandardCharsets.UTF_8)) {
+            int status = ProxyApplication.run(new String[0], config, out, err, (loaded, output) -> {
+                throw new IOException("Address already in use");
+            });
+            assertEquals(1, status);
+            assertTrue(errors.toString(StandardCharsets.UTF_8).contains("Address already in use"));
+        }
+    }
+
     private Result run(String[] args, Path defaultConfigPath) {
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
         int exitCode;
         try (PrintStream out = new PrintStream(stdout, true, StandardCharsets.UTF_8);
                 PrintStream err = new PrintStream(stderr, true, StandardCharsets.UTF_8)) {
-            exitCode = ProxyApplication.run(args, defaultConfigPath, out, err);
+            exitCode = ProxyApplication.run(args, defaultConfigPath, out, err,
+                    (config, output) -> startedConfig.set(config));
         }
         return new Result(
                 exitCode,

@@ -69,8 +69,8 @@ public record ProxyConfig(
         if (healthSuccessThreshold <= 0) {
             throw new IllegalArgumentException("healthSuccessThreshold must be positive");
         }
-        if (maxRequestBodyBytes <= 0) {
-            throw new IllegalArgumentException("maxRequestBodyBytes must be positive");
+        if (maxRequestBodyBytes <= 0 || maxRequestBodyBytes > Integer.MAX_VALUE - 8L) {
+            throw new IllegalArgumentException("maxRequestBodyBytes must be between 1 and 2147483639 (array limit)");
         }
         if (maxAttempts <= 0) {
             throw new IllegalArgumentException("maxAttempts must be positive");

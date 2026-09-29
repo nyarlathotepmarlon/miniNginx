@@ -41,6 +41,14 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <version>3.6.0</version>
+        <configuration>
+          <systemPropertyVariables>
+            <jdk.httpclient.disableRetryConnect>true</jdk.httpclient.disableRetryConnect>
+            <jdk.httpclient.enableAllMethodRetry>false</jdk.httpclient.enableAllMethodRetry>
+            <jdk.httpclient.redirects.retrylimit>1</jdk.httpclient.redirects.retrylimit>
+            <sun.net.httpserver.drainAmount>0</sun.net.httpserver.drainAmount>
+          </systemPropertyVariables>
+        </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

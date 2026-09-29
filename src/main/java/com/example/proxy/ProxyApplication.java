@@ -2,6 +2,7 @@ package com.example.proxy;
 
 import com.example.proxy.config.ConfigLoader;
 import com.example.proxy.config.ProxyConfig;
+import com.example.proxy.proxy.ReverseProxyServer;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
@@ -11,8 +12,7 @@ import java.util.Objects;
 /**
  * Command-line entry point for the reverse proxy.
  *
- * <p>The application validates the command line and loads a strongly typed UTF-8 configuration.
- * Runtime proxy components are added in the following stages.
+ * <p>Loads UTF-8 configuration and runs the stage-2 single-backend HTTP proxy until shutdown.
  */
 public final class ProxyApplication {
     static final Path DEFAULT_CONFIG_PATH = Path.of("config", "proxy.properties");
@@ -31,6 +31,16 @@ public final class ProxyApplication {
     }
 
     static int run(String[] args, Path defaultConfigPath, PrintStream out, PrintStream err) {
+        return run(args, defaultConfigPath, out, err, ProxyApplication::serve);
+    }
+
+    @FunctionalInterface
+    interface ServerRunner {
+        void run(ProxyConfig config, PrintStream out) throws IOException, InterruptedException;
+    }
+
+    static int run(String[] args, Path defaultConfigPath, PrintStream out, PrintStream err,
+            ServerRunner runner) {
         Objects.requireNonNull(args, "args must not be null");
         Objects.requireNonNull(defaultConfigPath, "defaultConfigPath must not be null");
         Objects.requireNonNull(out, "out must not be null");
@@ -70,8 +80,38 @@ public final class ProxyApplication {
                 config.listenAddress().getHostString(),
                 config.listenAddress().getPort(),
                 config.loadBalancingStrategy().configValue());
-        out.println("配置与后端模型初始化完成；HTTP 代理运行组件将在后续阶段接入。");
-        return 0;
+        try {
+            runner.run(config, out);
+            return 0;
+        } catch (IOException | RuntimeException exception) {
+            err.println("错误：代理启动或运行失败：" + exception.getMessage());
+            return 1;
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            err.println("代理已中断并关闭。");
+            return 130;
+        }
+    }
+
+    private static void serve(ProxyConfig config, PrintStream out) throws IOException, InterruptedException {
+        try (ReverseProxyServer proxy = ReverseProxyServer.create(config)) {
+            Thread shutdownHook = new Thread(proxy::close, "proxy-shutdown");
+            Runtime.getRuntime().addShutdownHook(shutdownHook);
+            try {
+                proxy.start();
+                out.printf("代理已启动：%s:%d；阶段 2 单后端模式，使用 %s（%s）%n",
+                        proxy.address().getHostString(), proxy.address().getPort(),
+                        config.backends().get(0).id(), config.backends().get(0).baseUri());
+                out.println("本阶段每请求仅尝试一次；其余后端、均衡策略、健康探测和业务重试尚未启用。");
+                proxy.awaitTermination();
+            } finally {
+                try {
+                    Runtime.getRuntime().removeShutdownHook(shutdownHook);
+                } catch (IllegalStateException shutdownInProgress) {
+                    // The JVM is already executing the hook.
+                }
+            }
+        }
     }
 
     private static String applicationVersion() {

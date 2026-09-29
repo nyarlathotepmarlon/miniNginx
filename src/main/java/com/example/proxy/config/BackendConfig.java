@@ -31,6 +31,12 @@ public record BackendConfig(String id, URI baseUri, int weight, String healthPat
             throw new IllegalArgumentException(
                     "backend " + id + " URL must not contain a query or fragment");
         }
+        if (baseUri.getRawUserInfo() != null) {
+            throw new IllegalArgumentException("backend " + id + " URL must not contain user credentials");
+        }
+        if (baseUri.getPort() == 0 || baseUri.getPort() > 65_535) {
+            throw new IllegalArgumentException("backend " + id + " port must be between 1 and 65535");
+        }
         if (weight <= 0) {
             throw new IllegalArgumentException("backend " + id + " weight must be positive");
         }

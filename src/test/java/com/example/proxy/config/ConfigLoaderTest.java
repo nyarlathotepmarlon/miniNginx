@@ -157,12 +157,26 @@ class ConfigLoaderTest {
         "ftp://127.0.0.1:9001",
         "http://127.0.0.1:9001/base?query=1",
         "http://127.0.0.1:9001/base#fragment",
+        "http://user:secret@127.0.0.1:9001",
+        "http://127.0.0.1:0",
+        "http://127.0.0.1:65536",
         "/relative/path"
     })
     void rejectsInvalidBackendUrls(String url) {
         Properties properties = minimalProperties();
         properties.setProperty("backend.primary.url", url);
 
+        assertThrows(IllegalArgumentException.class, () -> ConfigLoader.fromProperties(properties));
+    }
+
+    @Test
+    void boundsRequestBufferToAJavaByteArray() {
+        Properties properties = minimalProperties();
+        properties.setProperty("proxy.max-request-body-bytes", "2147483639");
+        assertEquals(2147483639L, ConfigLoader.fromProperties(properties).maxRequestBodyBytes());
+        properties.setProperty("proxy.max-request-body-bytes", "2147483640");
+        assertThrows(IllegalArgumentException.class, () -> ConfigLoader.fromProperties(properties));
+        properties.setProperty("proxy.max-request-body-bytes", Long.toString(Long.MAX_VALUE));
         assertThrows(IllegalArgumentException.class, () -> ConfigLoader.fromProperties(properties));
     }
 
