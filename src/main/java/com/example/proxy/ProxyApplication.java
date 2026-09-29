@@ -99,7 +99,7 @@ public final class ProxyApplication {
             Runtime.getRuntime().addShutdownHook(shutdownHook);
             try {
                 proxy.start();
-                out.printf("代理已启动：%s:%d；阶段 5 健康检查与有限重试模式，策略 %s，配置后端 %d 个%n",
+                out.printf("代理已启动：%s:%d；健康检查与有限重试模式，策略 %s，配置后端 %d 个%n",
                         proxy.address().getHostString(), proxy.address().getPort(),
                         config.loadBalancingStrategy().configValue(), config.backends().size());
                 config.backends().forEach(backend -> out.printf("  后端 %s（%s），权重 %d%n",

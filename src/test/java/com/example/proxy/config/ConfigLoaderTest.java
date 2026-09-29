@@ -135,6 +135,13 @@ class ConfigLoaderTest {
         assertEquals(1, config.backends().get(1).weight());
     }
 
+    @Test
+    void copyableExampleMatchesTheDefaultConfiguration() throws Exception {
+        Path example = Path.of("config", "proxy-example.properties");
+        assertTrue(Files.readString(example, StandardCharsets.UTF_8).contains("配置模板"));
+        assertEquals(ConfigLoader.load(Path.of("config", "proxy.properties")), ConfigLoader.load(example));
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"0", "65536", "not-a-port"})
     void rejectsInvalidProductionListenPorts(String port) {
