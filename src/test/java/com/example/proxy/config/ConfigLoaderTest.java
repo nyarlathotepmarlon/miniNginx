@@ -126,6 +126,15 @@ class ConfigLoaderTest {
         assertEquals("api-b", config.backends().get(1).id());
     }
 
+    @Test
+    void loadsTheStageThreeWeightedExample() throws Exception {
+        ProxyConfig config = ConfigLoader.load(Path.of("config", "proxy-weighted.properties"));
+        assertEquals(LoadBalancingStrategy.WEIGHTED_ROUND_ROBIN, config.loadBalancingStrategy());
+        assertEquals(2, config.backends().size());
+        assertEquals(3, config.backends().get(0).weight());
+        assertEquals(1, config.backends().get(1).weight());
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"0", "65536", "not-a-port"})
     void rejectsInvalidProductionListenPorts(String port) {

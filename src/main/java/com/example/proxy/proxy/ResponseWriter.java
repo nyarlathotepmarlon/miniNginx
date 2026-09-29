@@ -53,10 +53,9 @@ final class ResponseWriter {
     void json(int responseStatus, String json) throws IOException {
         exchange.getResponseHeaders().clear();
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
-        if (responseStatus >= 400) {
-            // An oversized/unread request must not be reused as the next request on this socket.
-            exchange.getResponseHeaders().set("Connection", "close");
-        }
+        // Local errors AND management replies may leave an upload unread. With drainAmount=0,
+        // explicitly prohibit reuse instead of advertising keep-alive then silently closing.
+        exchange.getResponseHeaders().set("Connection", "close");
         if (responseStatus == 405) {
             exchange.getResponseHeaders().set("Allow", "GET");
         }

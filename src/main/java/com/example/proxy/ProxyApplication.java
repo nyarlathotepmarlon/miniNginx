@@ -12,7 +12,7 @@ import java.util.Objects;
 /**
  * Command-line entry point for the reverse proxy.
  *
- * <p>Loads UTF-8 configuration and runs the stage-2 single-backend HTTP proxy until shutdown.
+ * <p>Loads UTF-8 configuration and runs the health-aware HTTP proxy until shutdown.
  */
 public final class ProxyApplication {
     static final Path DEFAULT_CONFIG_PATH = Path.of("config", "proxy.properties");
@@ -99,10 +99,18 @@ public final class ProxyApplication {
             Runtime.getRuntime().addShutdownHook(shutdownHook);
             try {
                 proxy.start();
-                out.printf("代理已启动：%s:%d；阶段 2 单后端模式，使用 %s（%s）%n",
+                out.printf("代理已启动：%s:%d；阶段 5 健康检查与有限重试模式，策略 %s，配置后端 %d 个%n",
                         proxy.address().getHostString(), proxy.address().getPort(),
-                        config.backends().get(0).id(), config.backends().get(0).baseUri());
-                out.println("本阶段每请求仅尝试一次；其余后端、均衡策略、健康探测和业务重试尚未启用。");
+                        config.loadBalancingStrategy().configValue(), config.backends().size());
+                config.backends().forEach(backend -> out.printf("  后端 %s（%s），权重 %d%n",
+                        backend.id(), backend.baseUri(), backend.weight()));
+                out.printf("后端初始为 UNKNOWN；成功阈值 %d，失败阈值 %d，探测周期 %dms，探测超时 %dms。%n",
+                        config.healthSuccessThreshold(), config.healthFailureThreshold(),
+                        config.healthInterval().toMillis(), config.healthTimeout().toMillis());
+                out.printf("达到成功阈值后才接收流量；幂等请求最多尝试 %d 次（含首次），POST/PATCH 不重试。%n",
+                        config.maxAttempts());
+                out.printf("连接超时 %dms，单次等待响应头超时 %dms；流式响应体不承诺整体截止时间。%n",
+                        config.connectTimeout().toMillis(), config.requestTimeout().toMillis());
                 proxy.awaitTermination();
             } finally {
                 try {

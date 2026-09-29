@@ -235,7 +235,9 @@ class ReverseProxyServerTest {
             calls.incrementAndGet();
             throw new AssertionError("Management request forwarded");
         }, logs::add)) {
-            String health = new String(get(proxy, "/_proxy/health").body(), StandardCharsets.UTF_8);
+            HttpResponse<byte[]> healthResponse = get(proxy, "/_proxy/health");
+            assertEquals("close", healthResponse.headers().firstValue("Connection").orElseThrow());
+            String health = new String(healthResponse.body(), StandardCharsets.UTF_8);
             assertTrue(health.contains("\"healthChecksEnabled\":false"));
             assertTrue(health.contains("\"eligibleBackends\":1"));
             assertEquals(404, get(proxy, "/_proxy").statusCode());
@@ -245,6 +247,11 @@ class ReverseProxyServerTest {
                     .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofByteArray());
             assertEquals(405, method.statusCode());
             assertEquals("GET", method.headers().firstValue("Allow").orElseThrow());
+            // Management does not wait for an upload and must not offer reuse of an unread socket.
+            String unread = rawRequest(proxy, "GET /_proxy/health HTTP/1.1\r\nHost: proxy\r\n"
+                    + "Content-Length: 999\r\n\r\n");
+            assertTrue(unread.startsWith("HTTP/1.1 200"), unread);
+            assertTrue(unread.toLowerCase(java.util.Locale.ROOT).contains("connection: close"), unread);
             assertEquals(0, calls.get());
         }
     }
@@ -330,7 +337,11 @@ class ReverseProxyServerTest {
                 closed.set(true);
             }
         };
-        try (ReverseProxyServer proxy = start(config(URI.create("http://localhost:9001")), request -> {
+        ProxyConfig config = config(List.of(
+                new BackendConfig("a", URI.create("http://localhost:9001"), 1, "/health"),
+                new BackendConfig("b", URI.create("http://localhost:9002"), 1, "/health")),
+                1024, Duration.ofSeconds(2));
+        try (ReverseProxyServer proxy = start(config, request -> {
             calls.incrementAndGet();
             return new UpstreamResponse(200, Map.of(), failingBody);
         }, logs::add)) {
@@ -395,17 +406,23 @@ class ReverseProxyServerTest {
     }
 
     @Test
-    void defaultFactoryUsesOnlyTheFirstConfiguredBackend() throws Exception {
+    void defaultFactoryUsesAllConfiguredBackends() throws Exception {
         AtomicInteger firstCalls = new AtomicInteger();
         AtomicInteger secondCalls = new AtomicInteger();
         try (Backend first = new Backend(exchange -> {
             try (exchange) {
-                firstCalls.incrementAndGet();
+                exchange.getRequestBody().readAllBytes();
+                if (!exchange.getRequestURI().getPath().equals("/health")) {
+                    firstCalls.incrementAndGet();
+                }
                 exchange.sendResponseHeaders(204, -1);
             }
         }); Backend second = new Backend(exchange -> {
             try (exchange) {
-                secondCalls.incrementAndGet();
+                exchange.getRequestBody().readAllBytes();
+                if (!exchange.getRequestURI().getPath().equals("/health")) {
+                    secondCalls.incrementAndGet();
+                }
                 exchange.sendResponseHeaders(204, -1);
             }
         }); ReverseProxyServer proxy = ReverseProxyServer.create(config(List.of(
@@ -413,14 +430,16 @@ class ReverseProxyServerTest {
                 new BackendConfig("second", second.uri(""), 9, "/health")), 1024, Duration.ofSeconds(2)))) {
             proxy.start();
             proxy.start();
+            awaitHealthy(client, proxy, 2);
             for (int i = 0; i < 4; i++) {
                 assertEquals(204, get(proxy, "/business").statusCode());
             }
             String health = new String(get(proxy, "/_proxy/health").body(), StandardCharsets.UTF_8);
             assertTrue(health.contains("\"totalBackends\":2"));
-            assertTrue(health.contains("\"eligibleBackends\":1"));
-            assertEquals(4, firstCalls.get());
-            assertEquals(0, secondCalls.get());
+            assertTrue(health.contains("\"eligibleBackends\":2"));
+            assertTrue(health.contains("\"loadBalancingStrategy\":\"round-robin\""));
+            assertEquals(2, firstCalls.get());
+            assertEquals(2, secondCalls.get());
         }
     }
 
