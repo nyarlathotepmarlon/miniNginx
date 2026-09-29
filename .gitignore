@@ -1,0 +1,14 @@
+target/
+.m2/
+
+.idea/
+*.iml
+.vscode/
+
+.classpath
+.project
+.settings/
+
+*.log
+hs_err_pid*
+replay_pid*
